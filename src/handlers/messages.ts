@@ -1,6 +1,7 @@
 import { InlineKeyboard, type Bot } from "grammy";
 import type { MyContext } from "../types";
 import { saveMeal } from "../db/meals";
+import { estimateCalories } from "../utils/gemini";
 
 export function registerMessageHandlers(bot: Bot<MyContext>): void {
   bot.on("message:text", async (ctx) => {
@@ -12,9 +13,29 @@ export function registerMessageHandlers(bot: Bot<MyContext>): void {
     if (s.step === "meal_input") {
       const userId = ctx.from?.id;
       if (!userId) return;
-      saveMeal(userId, text);
+
+      await ctx.reply("⏳ Аналізую калорії...");
+
+      const estimate = await estimateCalories(text);
+
+      if (!estimate) {
+        return ctx.reply("❌ Не вдалося проаналізувати їжу. Спробуйте описати простіше.");
+      }
+
+      saveMeal(userId, text, estimate.total_calories, JSON.stringify(estimate));
       s.step = undefined;
-      return ctx.reply("Прийом їжі збережено ✅");
+
+      const itemLines = estimate.items
+        .map((item) => `• ${item.name} — ${Math.round(item.calories)} ккал`)
+        .join("\n");
+
+      return ctx.reply(
+        `✅ Знайдено:\n\n${itemLines}\n\n` +
+        `🔥 Всього: *${Math.round(estimate.total_calories)} ккал*\n` +
+        `📊 Confidence: ${estimate.confidence.toFixed(2)}\n\n` +
+        `_Примітка: це орієнтовна оцінка калорій._`,
+        { parse_mode: "Markdown" },
+      );
     }
 
     if (s.step === "age") {

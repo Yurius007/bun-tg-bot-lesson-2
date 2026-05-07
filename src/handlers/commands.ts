@@ -2,6 +2,7 @@ import type { Bot } from "grammy";
 import type { MyContext } from "../types";
 import { loadUser } from "../db/users";
 import { getTodayMeals } from "../db/meals";
+import type { CalorieEstimate } from "../utils/gemini";
 
 export function registerCommandHandlers(bot: Bot<MyContext>): void {
   bot.command("start", (ctx) =>
@@ -62,7 +63,26 @@ export function registerCommandHandlers(bot: Bot<MyContext>): void {
       });
       const icon = MEAL_ICONS[i % MEAL_ICONS.length];
       const notes = m.notes ? `\n    📝 ${m.notes}` : "";
-      return `${icon} *${m.raw_text}*\n    🕐 ${time}${notes}`;
+
+      let itemLines = "";
+      if (m.ai_json) {
+        try {
+          const est = JSON.parse(m.ai_json) as CalorieEstimate;
+          itemLines =
+            "\n" +
+            est.items
+              .map((it) => `    • ${it.name} — ${Math.round(it.calories)} ккал`)
+              .join("\n");
+        } catch {
+          // ignore malformed json
+        }
+      }
+
+      const kcal = m.calories_estimated > 0
+        ? ` *(${Math.round(m.calories_estimated)} ккал)*`
+        : "";
+
+      return `${icon} *${m.raw_text}*${kcal}\n    🕐 ${time}${itemLines}${notes}`;
     });
 
     const date = new Date().toLocaleDateString("uk-UA", {

@@ -21,7 +21,15 @@ db.run(`
     user_id             INTEGER NOT NULL,
     raw_text            TEXT    NOT NULL,
     calories_estimated  REAL    NOT NULL DEFAULT 0,
+    ai_json             TEXT,
     notes               TEXT,
     timestamp           TEXT    NOT NULL
   )
 `);
+
+// migration for existing databases
+try {
+  db.run(`ALTER TABLE meals ADD COLUMN ai_json TEXT`);
+} catch {
+  // column already exists
+}
