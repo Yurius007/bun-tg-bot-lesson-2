@@ -27,7 +27,7 @@ Required JSON format:
   "confidence": confidence_score_between_0_and_1
 }`;
 
-export async function estimateCalories(mealText: string): Promise<CalorieEstimate | null> {
+async function tryEstimate(mealText: string): Promise<CalorieEstimate | null> {
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
@@ -54,4 +54,11 @@ export async function estimateCalories(mealText: string): Promise<CalorieEstimat
     console.error("[Gemini] estimateCalories error:", e);
     return null;
   }
+}
+
+export async function estimateCalories(mealText: string): Promise<CalorieEstimate | null> {
+  const first = await tryEstimate(mealText);
+  if (first) return first;
+  console.warn("[Gemini] first attempt failed, retrying once...");
+  return tryEstimate(mealText);
 }

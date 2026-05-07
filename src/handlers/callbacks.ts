@@ -2,6 +2,7 @@ import { InlineKeyboard, type Bot } from "grammy";
 import type { MyContext } from "../types";
 import { saveUser } from "../db/users";
 import { calculateBMR, calculateTDEE } from "../utils/calories";
+import { mainMenu } from "../utils/menu";
 
 export function registerCallbackHandlers(bot: Bot<MyContext>): void {
   bot.callbackQuery(/^sex:(male|female)$/, async (ctx) => {
@@ -33,15 +34,24 @@ export function registerCallbackHandlers(bot: Bot<MyContext>): void {
     const bmr = calculateBMR(s.weight!, s.height!, s.age!, s.sex!);
     const tdee = calculateTDEE(bmr, activity);
 
-    saveUser(userId, {
-      age: s.age!,
-      height: s.height!,
-      weight: s.weight!,
-      sex: s.sex!,
-      activity,
-      bmr,
-      tdee,
-    });
+    try {
+      saveUser(userId, {
+        age: s.age!,
+        height: s.height!,
+        weight: s.weight!,
+        sex: s.sex!,
+        activity,
+        bmr,
+        tdee,
+      });
+    } catch (e) {
+      console.error("[DB] saveUser failed:", e);
+      s.step = undefined;
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageReplyMarkup();
+      await ctx.reply("Сталася помилка. Спробуйте ще раз пізніше.", { reply_markup: mainMenu });
+      return;
+    }
 
     s.step = undefined;
 
@@ -49,7 +59,8 @@ export function registerCallbackHandlers(bot: Bot<MyContext>): void {
     await ctx.editMessageReplyMarkup();
 
     await ctx.reply(
-      `✅ Профіль збережено!\n\n🔥 BMR: ${bmr.toFixed(0)} ккал/день\n⚡ TDEE: ${tdee.toFixed(0)} ккал/день\n\nВикористайте /my_profile для перегляду.`
+      `✅ Профіль збережено!\n\n🔥 BMR: ${bmr.toFixed(0)} ккал/день\n⚡ TDEE: ${tdee.toFixed(0)} ккал/день\n\nВикористайте /my_profile для перегляду.`,
+      { reply_markup: mainMenu }
     );
   });
 }
