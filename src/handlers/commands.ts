@@ -1,9 +1,10 @@
-import type { Bot, Context } from "grammy";
+import type { Bot } from "grammy";
 import type { MyContext } from "../types";
 import { loadUser } from "../db/users";
 import { getTodayMeals } from "../db/meals";
-import type { CalorieEstimate } from "../utils/gemini";
-import { ADD_MEAL, SET_PROFILE, TODAY, mainMenu } from "../utils/menu";
+import { suggestMeals, type CalorieEstimate } from "../utils/gemini";
+import { ADD_MEAL, PLAN, SET_PROFILE, TODAY, mainMenu } from "../utils/menu";
+import { GOAL_DESCRIPTION, GOAL_LABEL, recommendedCalories } from "../utils/calories";
 
 async function startSetProfile(ctx: MyContext): Promise<void> {
   ctx.session = { step: "age" };
@@ -13,6 +14,55 @@ async function startSetProfile(ctx: MyContext): Promise<void> {
 async function startAddMeal(ctx: MyContext): Promise<void> {
   ctx.session = { step: "meal_input" };
   await ctx.reply("🍽️ Що ви їли? Опишіть звичайними словами (напр. «2 яйця і тост»):");
+}
+
+async function showPlan(ctx: MyContext): Promise<void> {
+  const userId = ctx.from?.id;
+  if (!userId) return;
+
+  let p;
+  try {
+    p = loadUser(userId);
+  } catch (e) {
+    console.error("[DB] loadUser failed:", e);
+    await ctx.reply("Сталася помилка. Спробуйте ще раз пізніше.", { reply_markup: mainMenu });
+    return;
+  }
+
+  if (!p) {
+    await ctx.reply("Спочатку заповніть профіль через /set_profile", { reply_markup: mainMenu });
+    return;
+  }
+
+  if (!p.goal) {
+    await ctx.reply("Оновіть профіль і виберіть вашу ціль", { reply_markup: mainMenu });
+    return;
+  }
+
+  const target = recommendedCalories(p.tdee, p.goal);
+
+  await ctx.reply(
+    `🎯 *Ваш план*\n\n` +
+    `Ваша ціль: ${GOAL_LABEL[p.goal]}\n\n` +
+    `Рекомендована норма:\n*${target.toFixed(0)} ккал / день*\n\n` +
+    `${GOAL_DESCRIPTION[p.goal]}`,
+    { parse_mode: "Markdown", reply_markup: mainMenu }
+  );
+
+  const ideas = await suggestMeals(target, p.goal);
+  if (ideas && ideas.length > 0) {
+    await ctx.reply(
+      `🍽️ *Ідеї страв:*\n` +
+      ideas.map((m) => `• ${m}`).join("\n") +
+      `\n\n_Це загальні рекомендації, а не медична порада._`,
+      { parse_mode: "Markdown", reply_markup: mainMenu }
+    );
+  } else {
+    await ctx.reply(
+      `_Це загальні рекомендації, а не медична порада._`,
+      { parse_mode: "Markdown", reply_markup: mainMenu }
+    );
+  }
 }
 
 async function showToday(ctx: MyContext): Promise<void> {
@@ -89,7 +139,8 @@ export function registerCommandHandlers(bot: Bot<MyContext>): void {
       "/set_profile — налаштувати профіль\n" +
       "/my_profile — переглянути профіль\n" +
       "/add_meal — записати прийом їжі\n" +
-      "/today — що з'їли сьогодні",
+      "/today — що з'їли сьогодні\n" +
+      "/plan — денна норма калорій під вашу ціль",
       { reply_markup: mainMenu }
     )
   );
@@ -103,6 +154,9 @@ export function registerCommandHandlers(bot: Bot<MyContext>): void {
   bot.command("today", showToday);
   bot.hears(TODAY, showToday);
 
+  bot.command("plan", showPlan);
+  bot.hears(PLAN, showPlan);
+
   bot.command("my_profile", async (ctx) => {
     const userId = ctx.from?.id;
     if (!userId) return;
@@ -114,14 +168,18 @@ export function registerCommandHandlers(bot: Bot<MyContext>): void {
       return ctx.reply("Сталася помилка. Спробуйте ще раз пізніше.", { reply_markup: mainMenu });
     }
     if (!p) return ctx.reply("Профіль ще не заповнено. Використайте /set_profile", { reply_markup: mainMenu });
+    const goalLine = p.goal
+      ? `Ціль: ${GOAL_LABEL[p.goal]}\n`
+      : `Ціль: не обрана (пройдіть /set_profile, щоб додати)\n`;
     await ctx.reply(
       `📋 Ваш профіль:\n` +
       `Вік: ${p.age} р.\n` +
       `Зріст: ${p.height} см\n` +
       `Вага: ${p.weight} кг\n` +
       `Стать: ${p.sex === "male" ? "Чоловіча" : "Жіноча"}\n` +
-      `Активність: ${p.activity}\n\n` +
-      `🔥 BMR: ${p.bmr.toFixed(0)} ккал/день\n` +
+      `Активність: ${p.activity}\n` +
+      goalLine +
+      `\n🔥 BMR: ${p.bmr.toFixed(0)} ккал/день\n` +
       `⚡ TDEE: ${p.tdee.toFixed(0)} ккал/день`,
       { reply_markup: mainMenu }
     );

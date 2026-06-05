@@ -11,9 +11,16 @@ db.run(`
     sex         TEXT    NOT NULL,
     activity_level TEXT NOT NULL,
     bmr         REAL    NOT NULL,
-    tdee        REAL    NOT NULL
+    tdee        REAL    NOT NULL,
+    goal        TEXT
   )
 `);
+
+try {
+  db.run(`ALTER TABLE users ADD COLUMN goal TEXT`);
+} catch {
+  // column already exists
+}
 
 db.run(`
   CREATE TABLE IF NOT EXISTS meals (
